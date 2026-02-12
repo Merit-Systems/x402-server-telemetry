@@ -8,10 +8,8 @@ const TABLE = 'mcp_resource_invocations';
  * Initialize the ClickHouse client singleton.
  * Call once at app startup (e.g., in instrumentation.ts).
  */
-export function initClickhouse(config: TelemetryConfig['clickhouse']): void {
-  // Lazy require to keep @clickhouse/client as a peer dependency
-
-  const { createClient } = require('@clickhouse/client') as typeof import('@clickhouse/client');
+export async function initClickhouse(config: TelemetryConfig['clickhouse']): Promise<void> {
+  const { createClient } = await import('@clickhouse/client');
   clickhouseClient = createClient({
     url: config.url,
     database: config.database ?? 'default',

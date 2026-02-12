@@ -26,27 +26,17 @@ export function extractVerifiedWallet(headers: Headers): string | null {
 
     if (!paymentHeader) return null;
 
-    // Try using @x402/core's decoder if available
+    // Decode the base64 payment header to extract the payer address.
+    // The header is a base64-encoded JSON object with the structure:
+    // { payload: { authorization: { from: "0x..." }, signature: "0x..." } }
     try {
-      const { decodePaymentSignatureHeader } = require('@x402/core/http') as {
-        decodePaymentSignatureHeader: (header: string) => {
-          payload?: { authorization?: { from?: string }; from?: string };
-        };
+      const decoded = JSON.parse(Buffer.from(paymentHeader, 'base64').toString()) as {
+        payload?: { authorization?: { from?: string }; from?: string };
       };
-      const payment = decodePaymentSignatureHeader(paymentHeader);
-      const from = payment?.payload?.authorization?.from ?? payment?.payload?.from;
+      const from = decoded?.payload?.authorization?.from ?? decoded?.payload?.from;
       return typeof from === 'string' ? from.toLowerCase() : null;
     } catch {
-      // @x402/core not available or decode failed — try manual base64 decode
-      try {
-        const decoded = JSON.parse(Buffer.from(paymentHeader, 'base64').toString()) as {
-          payload?: { authorization?: { from?: string }; from?: string };
-        };
-        const from = decoded?.payload?.authorization?.from ?? decoded?.payload?.from;
-        return typeof from === 'string' ? from.toLowerCase() : null;
-      } catch {
-        return null;
-      }
+      return null;
     }
   } catch {
     return null;

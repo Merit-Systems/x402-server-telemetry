@@ -23,8 +23,8 @@ let configuredOrigin: string | undefined;
  * });
  * ```
  */
-export function initTelemetry(config: TelemetryConfig): void {
-  initClickhouse(config.clickhouse);
+export async function initTelemetry(config: TelemetryConfig): Promise<void> {
+  await initClickhouse(config.clickhouse);
   if (config.origin) {
     configuredOrigin = config.origin;
   }
