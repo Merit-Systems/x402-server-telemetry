@@ -36,6 +36,9 @@ All imports are static. This was a hard-won lesson:
 ### Never tell consumers to use instrumentation.ts
 On Vercel serverless, `instrumentation.ts` runs in a separate module scope from route handlers. The ClickHouse client singleton set there is invisible to handlers. Always tell consumers to call `initTelemetry()` at module level in the same file that imports their route wrappers.
 
+### tsup splitting: true is mandatory
+The tsup config uses `splitting: true` so that all three entry points (index, siwx, builder) share a single ClickHouse singleton via a common chunk. Without it, each entry point gets its own copy of `clickhouseClient` — `initTelemetry()` from `./index` sets one copy, but `insertInvocation()` from `./builder` reads a different one (null). This is the same class of bug as the instrumentation.ts module scope issue.
+
 ### Telemetry never affects responses
 All ClickHouse logging is fire-and-forget, wrapped in try/catch. A telemetry failure must never cause a 500 or delay a response.
 
