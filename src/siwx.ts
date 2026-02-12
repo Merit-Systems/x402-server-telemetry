@@ -22,7 +22,7 @@ type SiwxHandler = (request: NextRequest, ctx: SiwxTelemetryContext) => Promise<
  *
  * Verifies the SIGN-IN-WITH-X header and sets the verified wallet automatically.
  * If no SIWX header is present, returns a 402 with SIWX challenge.
- * If verification fails, returns a 401.
+ * If verification fails, returns a 402 (matching x402 protocol convention).
  *
  * Usage:
  * ```typescript
@@ -60,7 +60,7 @@ export function withSiwxTelemetry(handler: SiwxHandler) {
     } catch {
       return NextResponse.json(
         { success: false, error: 'Invalid SIGN-IN-WITH-X header' },
-        { status: 401 },
+        { status: 402 },
       );
     }
 
@@ -69,7 +69,7 @@ export function withSiwxTelemetry(handler: SiwxHandler) {
     if (!validation.valid) {
       return NextResponse.json(
         { success: false, error: `SIWX validation failed: ${validation.error}` },
-        { status: 401 },
+        { status: 402 },
       );
     }
 
@@ -78,7 +78,7 @@ export function withSiwxTelemetry(handler: SiwxHandler) {
     if (!verification.valid || !verification.address) {
       return NextResponse.json(
         { success: false, error: 'SIWX signature verification failed' },
-        { status: 401 },
+        { status: 402 },
       );
     }
 
