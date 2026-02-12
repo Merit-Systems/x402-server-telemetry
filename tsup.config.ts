@@ -9,7 +9,12 @@ export default defineConfig({
   format: ['cjs', 'esm'],
   dts: true,
   clean: true,
-  splitting: false,
+  // splitting: true is REQUIRED for subpath exports.
+  // Without it, each entry point gets its own copy of the ClickHouse
+  // singleton and initTelemetry() from ./index won't be visible to
+  // insertInvocation() from ./builder or ./siwx.
+  // Only works for ESM (CJS always inlines). Both consumers use ESM.
+  splitting: true,
   sourcemap: true,
   external: [
     'next',
