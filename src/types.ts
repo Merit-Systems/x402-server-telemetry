@@ -44,6 +44,25 @@ export interface TelemetryContext {
 }
 
 /**
+ * Extracted request metadata — shared mutable state between context and logging.
+ * `verifiedWallet` is mutated by `setVerifiedWallet` so `recordInvocation` sees updates.
+ */
+export interface RequestMeta {
+  requestId: string;
+  startTime: number;
+  walletAddress: string | null;
+  clientId: string | null;
+  sessionId: string | null;
+  verifiedWallet: string | null;
+  route: string;
+  method: string;
+  origin: string;
+  referer: string | null;
+  requestContentType: string | null;
+  requestHeadersJson: string | null;
+}
+
+/**
  * ClickHouse connection config for initTelemetry.
  */
 export interface TelemetryConfig {
@@ -55,4 +74,6 @@ export interface TelemetryConfig {
   };
   /** Server's own origin URL (e.g., 'https://enrichx402.com'). Auto-detected from request if not set. */
   origin?: string;
+  /** If true, pings ClickHouse on init and logs the result. Never throws or blocks. */
+  verify?: boolean;
 }

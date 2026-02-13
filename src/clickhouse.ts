@@ -19,6 +19,29 @@ export function initClickhouse(config: TelemetryConfig['clickhouse']): void {
 }
 
 /**
+ * Ping ClickHouse to verify the connection. Fire-and-forget, logs result.
+ */
+export function pingClickhouse(): void {
+  if (!clickhouseClient) {
+    console.error('[x402-telemetry] Cannot verify: ClickHouse client not initialized.');
+    return;
+  }
+  clickhouseClient
+    .ping()
+    .then((result) => {
+      if (result.success) {
+        console.log('[x402-telemetry] ClickHouse connected');
+      } else {
+        console.error('[x402-telemetry] ClickHouse ping failed');
+      }
+    })
+    .catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('[x402-telemetry] ClickHouse ping failed:', message);
+    });
+}
+
+/**
  * Fire-and-forget insert into mcp_resource_invocations.
  * Wrapped in try/catch — never throws, never blocks.
  */
