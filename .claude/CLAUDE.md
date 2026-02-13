@@ -16,11 +16,12 @@ Subpath exports exist to isolate peer deps. Consumers that only use `withTelemet
 - `src/index.ts` — core exports only
 - `src/siwx.ts` — SIWX entrypoint (also exported as `./siwx`)
 - `src/route-builder.ts` — route builder entrypoint (also exported as `./builder`)
-- `src/clickhouse.ts` — ClickHouse singleton, `insertInvocation` (fire-and-forget)
-- `src/init.ts` — `initTelemetry` (synchronous)
-- `src/telemetry.ts` — `withTelemetry` wrapper
+- `src/telemetry-core.ts` — shared primitives (`extractRequestMeta`, `buildTelemetryContext`, `recordInvocation`) used by both `withTelemetry` and route builder
+- `src/clickhouse.ts` — ClickHouse singleton, `insertInvocation` (fire-and-forget), `pingClickhouse` (verify)
+- `src/init.ts` — `initTelemetry` (synchronous), optional `verify` flag triggers async ping
+- `src/telemetry.ts` — `withTelemetry` wrapper (composes telemetry-core primitives)
 - `src/extract-wallet.ts` — wallet extraction from payment headers
-- `src/types.ts` — shared types
+- `src/types.ts` — shared types (`McpResourceInvocation`, `TelemetryContext`, `RequestMeta`, `TelemetryConfig`)
 
 ## Critical rules
 
@@ -42,11 +43,15 @@ The tsup config uses `splitting: true` so that all three entry points (index, si
 ### Telemetry never affects responses
 All ClickHouse logging is fire-and-forget, wrapped in try/catch. A telemetry failure must never cause a 500 or delay a response.
 
+### telemetry-core.ts is the single source of truth
+Both `withTelemetry` and the route builder's handler use `extractRequestMeta`, `buildTelemetryContext`, and `recordInvocation` from `telemetry-core.ts`. Never reimplement header extraction or invocation logging inline — fix it in one place.
+
 ## Build
 
 ```bash
-npm run check   # format + lint + typecheck + build
+npm run check   # format + lint + typecheck + build + test
 npm run build    # tsup only
+npm test         # vitest
 ```
 
 tsup produces 3 entry points (index, siwx, builder) in both CJS and ESM with declarations. All peer deps are marked external.

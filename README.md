@@ -25,6 +25,7 @@ initTelemetry({
     username: process.env.TELEM_CLICKHOUSE_USERNAME,
     password: process.env.TELEM_CLICKHOUSE_PASSWORD,
   },
+  verify: true, // optional — pings ClickHouse on startup, logs success/failure
 });
 
 export { withTelemetry };
@@ -49,7 +50,7 @@ Requires: `@clickhouse/client`, `next`
 import { initTelemetry, withTelemetry } from '@merit-systems/x402-server-telemetry';
 ```
 
-- `initTelemetry(config)` — synchronous, call once at module level
+- `initTelemetry(config)` — synchronous, call once at module level. Pass `verify: true` to ping ClickHouse on startup (fire-and-forget, never blocks)
 - `withTelemetry(handler)` — wrap any Next.js route handler
 - `extractVerifiedWallet(headers)` — extract wallet from x402 payment headers
 
@@ -117,3 +118,11 @@ export async function register() {
 ### Subpath exports isolate heavy deps
 
 The `/siwx` and `/builder` entrypoints have additional peer dependencies. If you only use the core `withTelemetry`, you don't need `zod`, `@x402/next`, or `@x402/extensions` installed.
+
+### After updating, commit both `package.json` and lockfile
+
+`pnpm update @merit-systems/x402-server-telemetry` bumps the version specifier in **both** `package.json` and `pnpm-lock.yaml`. Vercel's `frozen-lockfile` mode will reject deploys if only the lockfile is committed. Always:
+
+```bash
+git add package.json pnpm-lock.yaml
+```
