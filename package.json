@@ -1,6 +1,6 @@
 {
   "name": "@merit-systems/x402-server-telemetry",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Telemetry package for x402-protected API servers. Extracts identity headers, logs invocations to ClickHouse, and extracts verified wallet addresses from x402 payments and SIWX auth.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -32,7 +32,8 @@
     "format": "prettier --write 'src/**/*.ts' '*.json' '*.mjs'",
     "format:check": "prettier --check 'src/**/*.ts' '*.json' '*.mjs'",
     "typecheck": "tsc --noEmit",
-    "check": "npm run format:check && npm run lint && npm run typecheck && npm run build",
+    "test": "vitest run",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm run build && npm test",
     "prepublishOnly": "npm run check"
   },
   "keywords": [
@@ -76,6 +77,7 @@
     "tsup": "^8.0.0",
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.55.0",
+    "vitest": "^4.0.18",
     "zod": "^4.1.13"
   }
 }

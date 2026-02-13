@@ -7,14 +7,11 @@
  */
 
 import { type NextRequest, NextResponse } from 'next/server';
-import { randomUUID } from 'crypto';
 import { withX402 } from '@x402/next';
 import { z, type ZodType } from 'zod';
 import { declareDiscoveryExtension } from '@x402/extensions/bazaar';
-import type { McpResourceInvocation, TelemetryContext } from './types';
-import { insertInvocation } from './clickhouse';
-import { extractVerifiedWallet } from './extract-wallet';
-import { getOrigin } from './init';
+import type { TelemetryContext } from './types';
+import { extractRequestMeta, buildTelemetryContext, recordInvocation } from './telemetry-core';
 
 export class HttpError extends Error {
   constructor(
@@ -45,7 +42,6 @@ type HandlerContext<TBody, TQuery> = {
   body: TBody;
   query: TQuery;
   request: NextRequest;
-  /** Telemetry context with wallet info */
   telemetry: TelemetryContext;
 };
 
@@ -74,21 +70,6 @@ function formatValidationError(error: import('zod').ZodError): string {
   return `Validation failed: ${errors.join('; ')}`;
 }
 
-function statusTextFromCode(code: number): string {
-  switch (code) {
-    case 200:
-      return 'OK';
-    case 400:
-      return 'Bad Request';
-    case 500:
-      return 'Internal Server Error';
-    case 504:
-      return 'Gateway Timeout';
-    default:
-      return String(code);
-  }
-}
-
 export interface RouteBuilderOptions {
   /** The x402 resource server instance (from @x402/core/server). Required when using .price(). */
   x402Server?: unknown;
@@ -108,40 +89,36 @@ class RouteBuilder<TBody = unknown, TQuery = unknown, TOutput = unknown> {
 
   price(amount: string, network: string, asset?: string) {
     return new RouteBuilder<TBody, TQuery, TOutput>(
-      {
-        ...this.config,
-        accepts: [{ amount, network, asset }],
-      },
+      { ...this.config, accepts: [{ amount, network, asset }] },
       this.options,
     );
   }
 
   accepts(options: AcceptsOption[]) {
     return new RouteBuilder<TBody, TQuery, TOutput>(
-      {
-        ...this.config,
-        accepts: options,
-      },
+      { ...this.config, accepts: options },
       this.options,
     );
   }
 
   body<T>(schema: ZodType<T>) {
     return new RouteBuilder<T, TQuery, TOutput>(
-      {
-        ...this.config,
-        bodySchema: schema as ZodType<unknown>,
-      } as BuilderConfig<T, TQuery, TOutput>,
+      { ...this.config, bodySchema: schema as ZodType<unknown> } as BuilderConfig<
+        T,
+        TQuery,
+        TOutput
+      >,
       this.options,
     );
   }
 
   query<T>(schema: ZodType<T>) {
     return new RouteBuilder<TBody, T, TOutput>(
-      {
-        ...this.config,
-        querySchema: schema as ZodType<unknown>,
-      } as BuilderConfig<TBody, T, TOutput>,
+      { ...this.config, querySchema: schema as ZodType<unknown> } as BuilderConfig<
+        TBody,
+        T,
+        TOutput
+      >,
       this.options,
     );
   }
@@ -159,10 +136,7 @@ class RouteBuilder<TBody = unknown, TQuery = unknown, TOutput = unknown> {
 
   description(text: string) {
     return new RouteBuilder<TBody, TQuery, TOutput>(
-      {
-        ...this.config,
-        description: text,
-      },
+      { ...this.config, description: text },
       this.options,
     );
   }
@@ -172,86 +146,22 @@ class RouteBuilder<TBody = unknown, TQuery = unknown, TOutput = unknown> {
       this.config;
 
     const coreHandler = async (request: NextRequest): Promise<NextResponse> => {
-      const startTime = Date.now();
-      const requestId = randomUUID();
+      const meta = extractRequestMeta(request);
+      const ctx = buildTelemetryContext(meta);
 
-      // Extract telemetry headers
-      let walletAddress: string | null = null;
-      let clientId: string | null = null;
-      let sessionId: string | null = null;
-      let verifiedWallet: string | null = null;
-      let route = '';
-      let method = '';
-      let origin = '';
-      let referer: string | null = null;
-      let requestContentType: string | null = null;
-      let requestHeadersJson: string | null = null;
-      let requestBodyString: string | null = null;
-
-      try {
-        walletAddress = request.headers.get('X-Wallet-Address')?.toLowerCase() ?? null;
-        clientId = request.headers.get('X-Client-ID') ?? null;
-        sessionId = request.headers.get('X-Session-ID') ?? null;
-        referer = request.headers.get('Referer') ?? null;
-        requestContentType = request.headers.get('content-type') ?? null;
-        route = request.nextUrl.pathname;
-        method = request.method;
-        origin = getOrigin() ?? request.nextUrl.origin;
-        verifiedWallet = extractVerifiedWallet(request.headers);
-        requestHeadersJson = JSON.stringify(Object.fromEntries(request.headers.entries()));
-      } catch {
-        // Continue with defaults
-      }
-
-      const telemetryCtx: TelemetryContext = {
-        walletAddress,
-        clientId,
-        sessionId,
-        verifiedWallet,
-        setVerifiedWallet: (address: string) => {
-          verifiedWallet = address.toLowerCase();
-          telemetryCtx.verifiedWallet = verifiedWallet;
-        },
-      };
-
-      const log = (
-        statusCode: number,
-        statusText: string,
-        responseBody: string | null,
-        responseHeaders: string | null,
-        responseContentType: string | null,
-      ) => {
-        try {
-          const invocation: McpResourceInvocation = {
-            id: requestId,
-            x_wallet_address: walletAddress,
-            x_client_id: clientId,
-            session_id: sessionId,
-            verified_wallet_address: verifiedWallet,
-            method,
-            route,
-            origin,
-            referer,
-            request_content_type: requestContentType,
-            request_headers: requestHeadersJson,
-            request_body: requestBodyString,
-            status_code: statusCode,
-            status_text: statusText,
-            duration: Date.now() - startTime,
-            response_content_type: responseContentType,
-            response_headers: responseHeaders,
-            response_body: responseBody,
-            created_at: new Date(),
-          };
-          insertInvocation(invocation);
-        } catch {
-          // Never affects the response
-        }
+      const log = (status: number, responseBody: string | null, resp: NextResponse) => {
+        recordInvocation(meta, requestBodyString, {
+          status,
+          body: responseBody,
+          headers: JSON.stringify(Object.fromEntries(resp.headers.entries())),
+          contentType: resp.headers.get('content-type') ?? null,
+        });
       };
 
       // Parse and validate body
       let body: TBody = undefined as TBody;
       let query: TQuery = undefined as TQuery;
+      let requestBodyString: string | null = null;
 
       if (bodySchema) {
         let rawBody: unknown;
@@ -263,13 +173,7 @@ class RouteBuilder<TBody = unknown, TQuery = unknown, TOutput = unknown> {
             { success: false, error: 'Invalid JSON body' },
             { status: 400 },
           );
-          log(
-            400,
-            'Bad Request',
-            JSON.stringify({ success: false, error: 'Invalid JSON body' }),
-            JSON.stringify(Object.fromEntries(errorResp.headers.entries())),
-            errorResp.headers.get('content-type'),
-          );
+          log(400, JSON.stringify({ success: false, error: 'Invalid JSON body' }), errorResp);
           return errorResp;
         }
 
@@ -283,13 +187,7 @@ class RouteBuilder<TBody = unknown, TQuery = unknown, TOutput = unknown> {
             details: parsed.error.flatten(),
           };
           const errorResp = NextResponse.json(errorBody, { status: 400 });
-          log(
-            400,
-            'Bad Request',
-            JSON.stringify(errorBody),
-            JSON.stringify(Object.fromEntries(errorResp.headers.entries())),
-            errorResp.headers.get('content-type'),
-          );
+          log(400, JSON.stringify(errorBody), errorResp);
           return errorResp;
         }
         body = parsed.data;
@@ -308,13 +206,7 @@ class RouteBuilder<TBody = unknown, TQuery = unknown, TOutput = unknown> {
             details: parsed.error.flatten(),
           };
           const errorResp = NextResponse.json(errorBody, { status: 400 });
-          log(
-            400,
-            'Bad Request',
-            JSON.stringify(errorBody),
-            JSON.stringify(Object.fromEntries(errorResp.headers.entries())),
-            errorResp.headers.get('content-type'),
-          );
+          log(400, JSON.stringify(errorBody), errorResp);
           return errorResp;
         }
         query = parsed.data;
@@ -323,19 +215,13 @@ class RouteBuilder<TBody = unknown, TQuery = unknown, TOutput = unknown> {
       // Execute user handler
       let response: TResponse;
       try {
-        response = await fn({ body, query, request, telemetry: telemetryCtx });
+        response = await fn({ body, query, request, telemetry: ctx });
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : 'Unknown error';
         const status = error instanceof HttpError ? error.status : 500;
         const errorBody = { success: false, error: message };
         const errorResp = NextResponse.json(errorBody, { status });
-        log(
-          status,
-          statusTextFromCode(status),
-          JSON.stringify(errorBody),
-          JSON.stringify(Object.fromEntries(errorResp.headers.entries())),
-          errorResp.headers.get('content-type'),
-        );
+        log(status, JSON.stringify(errorBody), errorResp);
         return errorResp;
       }
 
@@ -347,13 +233,7 @@ class RouteBuilder<TBody = unknown, TQuery = unknown, TOutput = unknown> {
         !(response as { success: boolean }).success
       ) {
         const errorResp = NextResponse.json(response, { status: 500 });
-        log(
-          500,
-          'Internal Server Error',
-          JSON.stringify(response),
-          JSON.stringify(Object.fromEntries(errorResp.headers.entries())),
-          errorResp.headers.get('content-type'),
-        );
+        log(500, JSON.stringify(response), errorResp);
         return errorResp;
       }
 
@@ -365,14 +245,7 @@ class RouteBuilder<TBody = unknown, TQuery = unknown, TOutput = unknown> {
       } catch {
         // Not serializable — that's fine
       }
-      log(
-        200,
-        'OK',
-        responseBodyString,
-        JSON.stringify(Object.fromEntries(successResp.headers.entries())),
-        successResp.headers.get('content-type'),
-      );
-
+      log(200, responseBodyString, successResp);
       return successResp;
     };
 
@@ -392,7 +265,6 @@ class RouteBuilder<TBody = unknown, TQuery = unknown, TOutput = unknown> {
       throw new Error('X402_PAYEE_ADDRESS environment variable is required when using .price()');
     }
 
-    // Build route config for @x402/next
     const routeConfig = {
       description,
       accepts: accepts.map(({ amount, network, asset }) => ({
@@ -405,7 +277,6 @@ class RouteBuilder<TBody = unknown, TQuery = unknown, TOutput = unknown> {
       extensions: buildDiscoveryExtensions(bodySchema, querySchema, outputSchema, outputExample),
     };
 
-    // Wrap with @x402/next
     if (!this.options.x402Server) {
       throw new Error(
         'x402Server is required when using .price(). Pass it to createRouteBuilder({ x402Server }).',

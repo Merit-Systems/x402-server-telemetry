@@ -1,5 +1,5 @@
 import type { TelemetryConfig } from './types';
-import { initClickhouse } from './clickhouse';
+import { initClickhouse, pingClickhouse } from './clickhouse';
 
 let configuredOrigin: string | undefined;
 
@@ -29,6 +29,9 @@ export function initTelemetry(config: TelemetryConfig): void {
   initClickhouse(config.clickhouse);
   if (config.origin) {
     configuredOrigin = config.origin;
+  }
+  if (config.verify) {
+    pingClickhouse();
   }
 }
 
