@@ -15,6 +15,11 @@ export function initClickhouse(config: TelemetryConfig['clickhouse']): void {
     database: config.database ?? 'default',
     username: config.username ?? 'default',
     password: config.password ?? '',
+    request_timeout: 60_000,
+    keep_alive: {
+      enabled: true,
+      idle_socket_ttl: 2500,
+    },
   });
 }
 
