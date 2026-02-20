@@ -57,20 +57,22 @@ export function withTelemetry(handler: TelemetryHandler) {
 
     // 402 is the x402/MPP payment challenge — not a real invocation, skip logging
     if (response.status !== 402) {
-      // Capture response metadata before returning (headers are available synchronously)
+      // Capture all response data before returning — response.clone() must happen
+      // before Next.js consumes the body to send it to the client.
       const status = response.status;
       const responseHeaders = JSON.stringify(Object.fromEntries(response.headers.entries()));
       const contentType = response.headers.get('content-type') ?? null;
+      let responseBodyString: string | null = null;
+      try {
+        responseBodyString = await response.clone().text();
+      } catch {
+        // Response body read failed — that's fine
+      }
 
-      // Defer the ClickHouse insert until after the response is sent
-      after(async () => {
+      // Defer the ClickHouse insert until after the response is sent.
+      // On Vercel, after() keeps the Lambda alive until the insert completes.
+      after(() => {
         try {
-          let responseBodyString: string | null = null;
-          try {
-            responseBodyString = await response.clone().text();
-          } catch {
-            // Response body read failed — that's fine
-          }
           recordInvocation(meta, requestBodyString, {
             status,
             body: responseBodyString,
