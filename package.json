@@ -48,6 +48,10 @@
     "clickhouse",
     "payments"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Merit-Systems/agentcash-telemetry"
+  },
   "license": "MIT",
   "publishConfig": {
     "access": "public"
